@@ -11,7 +11,7 @@ set -eu
 
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 ADB=${ADB:-adb}
-TAG=${TAG:-v1.0.4}
+TAG=${TAG:-v1.0.5}
 YES=0
 DRY=0
 LOCAL=""
