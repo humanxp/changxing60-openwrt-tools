@@ -3,6 +3,7 @@
 #
 #   ./install-from-release.sh --tag v1.0.0              # 交互确认
 #   ./install-from-release.sh --tag v1.0.0 --yes        # 不确认（危险）
+#   ./install-from-release.sh --tag v1.0.0 --dry-run    # 只检查与构建，不写设备
 #   ./install-from-release.sh --local /path/to/assets   # 用本地已下载的资源
 #
 # 前提：目标机 Android 在 slot a、已 root（su=0）、userdata 已缩出 64 GiB 空闲区。
@@ -12,6 +13,7 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 ADB=${ADB:-adb}
 TAG=${TAG:-v1.0.0}
 YES=0
+DRY=0
 LOCAL=""
 PASSWORD=""
 OWNER_REPO=${OWNER_REPO:-humanxp/changxing60-openwrt-tools}
@@ -25,6 +27,7 @@ while [ $# -gt 0 ]; do
         --local) LOCAL=$2; shift 2 ;;
         --password) PASSWORD=$2; shift 2 ;;
         --yes|-y) YES=1; shift ;;
+        --dry-run) DRY=1; shift ;;
         -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
         *) die "unknown argument: $1" ;;
     esac
@@ -102,6 +105,12 @@ python3 "$REPO/vendor/boot/build-boot-image.py" \
     --ueventd-perms "$ASSETS/helpers/etc/ueventd-perms.sh" \
     --android-subset "$ASSETS/helpers/android" \
     --out "$WORK/boot-linux-slotb.img"
+
+if [ "$DRY" = 1 ]; then
+    say "dry-run：检查全部通过，boot 镜像已生成"
+    echo "  $WORK/boot-linux-slotb.img"
+    exit 0
+fi
 
 # ---------------------------------------------------------------- confirm
 [ -n "$PASSWORD" ] || { printf '\n设置 root 密码: '; stty -echo 2>/dev/null || true; read -r PASSWORD; stty echo 2>/dev/null || true; echo; }
