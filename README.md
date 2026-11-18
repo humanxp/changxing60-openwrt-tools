@@ -8,6 +8,13 @@ ZTE 7552N（中兴畅行60）安装 OpenWrt 的**叠加工具与文档**。
 > 本仓库不复制上游代码，只提供脚本、文档和设备侧调优记录。
 > 细微节说明：[`docs/CHANGES-VS-UPSTREAM.md`](docs/CHANGES-VS-UPSTREAM.md)
 
+**English:** OpenWrt tooling for the ZTE 7552N (畅行60, Unisoc UMS9620), derived from
+[6Leokk/changxing60-linux](https://github.com/6Leokk/changxing60-linux). Instead of rebuilding the
+5.4.254 kernel in Docker, it extracts the exact `Image` from a running device's `boot_b` and reuses the
+static helpers inside its boot ramdisk, so installing on another unit needs only `adb` + `python3` +
+`openssl`. It also documents the device-side tuning (fw4 software flow-offload fix, RPS, performance
+governor) that lifted the software-forwarding ceiling from ~200 Mbps.
+
 ---
 
 ## 改了什么
