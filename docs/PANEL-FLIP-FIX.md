@@ -1,4 +1,4 @@
-# 内屏页签卡顿：page-flip 等待从 500 ms 降到 40 ms
+# 内屏页签卡顿：两处修复（page-flip 等待、信号页同步查询）
 
 ## 现象
 
@@ -56,6 +56,30 @@ ssh root@192.168.77.1 'cp /usr/bin/changxing60-screen /root/changxing60-screen.b
 ssh root@192.168.77.1 'cat > /usr/bin/changxing60-screen' < screen
 ssh root@192.168.77.1 '/etc/init.d/changxing60-screen restart'
 ```
+
+
+## 第二处：信号页的 1.5 秒同步查询
+
+切到「信号」页后，面板每 2 秒的刷新里会执行：
+
+```c
+run_cmd_all("ubus call changxing60net status", buf, sizeof buf);
+```
+
+实测这个调用要 **1.5 秒**（rpcd 里它要问基带）。单线程 UI 在这个窗口里既不能重绘也读不了触摸，
+所以停在信号页时每 10 秒出现一次明显卡顿；切到别的页签就没有这笔开销。
+
+改成子进程异步：
+
+```c
+pipe() → fork() → execl("/bin/sh","-c","ubus call changxing60net status")
+```
+
+`sig_refresh()` 每拍只做：`sig_fetch_poll()`（非阻塞 read + `waitpid(WNOHANG)`），数据齐了再解析。
+**注意**：只读到子进程退出是不够的——管道里可能还有未读数据，JSON 会被截断、`rsrp` 解析失败
+（表现为信号页数值空白）。必须等 `read()` 返回 0（EOF）再解析。
+
+改完实测：切页 16–17 ms，信号页数值正常（日志里 `sig N bytes ok=1`）。
 
 ## 仍然存在的问题
 
