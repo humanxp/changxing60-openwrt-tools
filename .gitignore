@@ -1,0 +1,8 @@
+*.img
+*.tar.gz
+*.bin
+out/
+work/
+backup/
+bootimg/
+dist/
