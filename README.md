@@ -120,6 +120,22 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 | 空闲区 | userdata 已缩到 64 GiB，Linux 区（扇区 152,068,096 起）已腾出 |
 | 主机 | `adb`、`python3`、`openssl`、`curl`；**不需要 Docker** |
 
+## 验证记录
+
+2026-11-19，真机 ZTE 7552N（P720S20）用本仓库的 Release 资源 + `install-from-release.sh` 完整走了一遍：
+
+| 步骤 | 结果 |
+|---|---|
+| 资源下载 / SHA256 校验 | ✅ |
+| 设备检查（型号 / slot a / root / 空闲区） | ✅ |
+| 目标机 boot 镜像生成 | ✅（与本地构建 sha 一致，可复现） |
+| rootfs 写入 + boot_b + misc | ✅ `CHANGXING60-INSTALL-OK` |
+| 首次启动 | ❌ 上游 HEAD 的 `init` 在 `switch_root` 后网络不通（NCM 有、DHCP 无） |
+| 换用实测可用的 `init` 后 | ✅ 启动、DHCP、5G WAN（ping 2/2）、flowtable 五设备、SSID `Changxing60` |
+
+因此 `vendor/boot/init` 固定为**实测可用**的版本（见 `vendor/NOTICE.md`）。
+如果你自己构建时遇到"USB 网卡有、拿不到 IP"，先检查 init 版本。
+
 ## 已知坑
 
 1. **别用 `sysupgrade`**，别刷通用 arm64 OpenWrt 镜像。
