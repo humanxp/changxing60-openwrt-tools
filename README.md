@@ -38,10 +38,10 @@
 ```sh
 git clone https://github.com/humanxp/changxing60-openwrt-tools.git
 cd changxing60-openwrt-tools
-scripts/install-from-release.sh --tag v1.0.1
+scripts/install-from-release.sh --tag v1.0.2
 ```
 
-脚本会做完整流程：下载并校验 [Release v1.0.1](https://github.com/humanxp/changxing60-openwrt-tools/releases/tag/v1.0.1)
+脚本会做完整流程：下载并校验 [Release v1.0.2](https://github.com/humanxp/changxing60-openwrt-tools/releases/tag/v1.0.2)
 资源 → 检查设备（型号 / slot / root / 空闲区）→ **用目标机自己的 `boot_a` 生成 boot 镜像** →
 解包 rootfs → 写 `boot_b` → 写 `misc` → 重启。
 
@@ -148,11 +148,11 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 
 仓库与 Release **不含任何个人配置**：
 
-- Release 的 rootfs 已移除 `/etc/ShellCrash`（含订阅节点）及其开机服务；
+- Release 的 rootfs **包含 ShellCrash 应用本体**（CrashCore、mihomo、菜单、UI、规则集），但已删除订阅地址与 token、`yamls/`、`config.yaml*`、`cache.db` 等个人配置，节点需自行导入；
 - SSH 主机密钥、root 密码哈希、热点 PSK 均已重置为通用默认值；
 - 设备序列号、IMEI、账号信息不进入镜像。
 
-> v1.0.0 曾误带一份 ShellCrash 配置，已删除该 Release 并由 v1.0.1 取代。
+> v1.0.0 曾误带一份 ShellCrash 配置，已删除该 Release 并由 v1.0.2 取代。
 
 ## 许可与免责
 
