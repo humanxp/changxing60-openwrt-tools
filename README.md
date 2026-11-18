@@ -1,19 +1,62 @@
 # changxing60-openwrt-tools
 
-ZTE 7552N（中兴畅行60）安装 OpenWrt 的**叠加工具与文档**。
+**ZTE 7552N（中兴畅行60）装 OpenWrt 的工具与文档。**
 
-站在 [6Leokk/changxing60-linux](https://github.com/6Leokk/changxing60-linux) @ `163c004` 之上
+[![license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![platform](https://img.shields.io/badge/platform-ZTE%207552N%20%2F%20UMS9620-informational.svg)](#前置条件)
+[![openwrt](https://img.shields.io/badge/OpenWrt-25.12.5-00a2e8.svg)](https://openwrt.org)
+[![kernel](https://img.shields.io/badge/kernel-5.4.254-important.svg)](#改了什么)
+[![release](https://img.shields.io/github/v/release/humanxp/changxing60-openwrt-tools?color=success)](https://github.com/humanxp/changxing60-openwrt-tools/releases)
+
+派生自 [6Leokk/changxing60-linux](https://github.com/6Leokk/changxing60-linux) @ `163c004`
 （它本身 fork 自 [dikeckaan/mu300-linux](https://github.com/dikeckaan/mu300-linux)，同为展锐 UMS9620 平台）。
 
-> 本仓库不复制上游代码，只提供脚本、文档和设备侧调优记录。
-> 细微节说明：[`docs/CHANGES-VS-UPSTREAM.md`](docs/CHANGES-VS-UPSTREAM.md)
+> 本仓库不复制上游代码，只做叠加：把「装一台」从**几小时的内核编译**压缩成**下载 + 一条命令**。
+> 逐项差异见 [`docs/CHANGES-VS-UPSTREAM.md`](docs/CHANGES-VS-UPSTREAM.md)。
 
-**English:** OpenWrt tooling for the ZTE 7552N (畅行60, Unisoc UMS9620), derived from
-[6Leokk/changxing60-linux](https://github.com/6Leokk/changxing60-linux). Instead of rebuilding the
-5.4.254 kernel in Docker, it extracts the exact `Image` from a running device's `boot_b` and reuses the
-static helpers inside its boot ramdisk, so installing on another unit needs only `adb` + `python3` +
-`openssl`. It also documents the device-side tuning (fw4 software flow-offload fix, RPS, performance
-governor) that lifted the software-forwarding ceiling from ~200 Mbps.
+---
+
+## 截图
+
+设备自带的中文状态面板（480×854 内屏，直接读屏，非手机翻拍）：
+
+<table>
+<tr>
+<td><img src="docs/images/panel-overview.png" width="260" alt="概览"></td>
+<td><img src="docs/images/panel-signal.png" width="260" alt="信号"></td>
+</tr>
+<tr>
+<td align="center"><b>概览</b>：运行时长 / 实时速率 / <code>sipa_eth0</code> 与 IPv6 / 热点二维码 / 电池 / CPU·内存</td>
+<td align="center"><b>信号</b>：NR5G band 41 100 MHz / PCI / RSRP −92 dBm / SINR 10.2 / 邻区</td>
+</tr>
+</table>
+
+---
+
+## 一条命令安装
+
+```sh
+git clone https://github.com/humanxp/changxing60-openwrt-tools.git
+cd changxing60-openwrt-tools
+scripts/install-from-release.sh --tag v1.0.0
+```
+
+脚本会做完整流程：下载并校验 [Release v1.0.0](https://github.com/humanxp/changxing60-openwrt-tools/releases/tag/v1.0.0)
+资源 → 检查设备（型号 / slot / root / 空闲区）→ **用目标机自己的 `boot_a` 生成 boot 镜像** →
+解包 rootfs → 写 `boot_b` → 写 `misc` → 重启。
+
+> ⚠️ 目标机必须**已 root** 且 **userdata 已缩出 64 GiB 空闲区**。原厂机先看
+> [`docs/INSTALL-NEW-PHONE.zh-CN.md`](docs/INSTALL-NEW-PHONE.zh-CN.md) §3——
+> 那一步不可逆、会清 Android 数据，本仓库不自动化它。
+
+装完 60–90 秒：
+
+```sh
+ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
+# OpenWrt 25.12.5 / 5.4.254-gb50db5b6224c
+```
+
+默认热点 `Changxing60` / `changxing60`，装完请立刻改；root 密码是安装时你输入的那个。
 
 ---
 
@@ -21,71 +64,73 @@ governor) that lifted the software-forwarding ceiling from ~200 Mbps.
 
 | # | 上游做法 | 这里改成 | 收益 |
 |---|---|---|---|
-| 1 | `kernel/build-linux.sh`：Docker 里编译 ZTE 5.4 GPL 源码 + wlan/mali 出树模块，小时级 | 从一台已装好的 7552N 的 `boot_b` 里提取**未压缩 arm64 Image**（32,002,560 B）+ `/lib/modules/*.ko` | 秒级拿到与设备**完全一致**的内核（`5.4.254-gb50db5b6224c #3`，sha256 `03d50fec…`），无 ABI 错配 |
-| 2 | `install.sh` 用 Docker 现场编 `busybox` / `logdw` / `bt-init` | 从已装好的 boot ramdisk（LZ4 cpio）里解出 static arm64 的 `busybox`、`logdw`、`ueventd-perms.sh`、Android 子集 | **整条链不再需要 Docker** |
-| 3 | 手工拼 `boot/build-boot-image.py` 的 8 个参数 | 新增 `scripts/build-boot-for-target.sh`：导 `boot_a` + `misc` 头，一条命令出镜像 | 少踩参数坑，且强制 boot header 来自**目标机自己** |
-| 4 | 检查散在 `install.sh` 里、且要求 Docker | 新增 `scripts/install-new-phone.sh`：工具链 / rootfs 校验 / `out/` / dumps / 设备 root / slot 全部先过一遍 | 失败在写入之前，不动机器 |
-| 5 | 无 | 预置 rootfs（从在用设备整机备份，剔除 6.18 残留模块、个人公钥、诊断日志） | 装出来就是调优过的状态 |
-| 6 | 无 | 两份文档：agent 交接教程 + 人读安装说明（区分「已 root+已扩区」与「原厂未动」） | 换人/换 agent 也能复现 |
+| 1 | Docker 里编译 ZTE 5.4 GPL 源码 + wlan/mali 出树模块，小时级 | 从一台已装好的 7552N 的 `boot_b` 提取**未压缩 arm64 Image**（32,002,560 B）+ `/lib/modules/*.ko` | 秒级拿到与设备完全一致的内核，无 ABI 错配 |
+| 2 | `install.sh` 用 Docker 现场编 `busybox` / `logdw` / `bt-init` | 从已装好的 boot ramdisk 里解出 static arm64 的 `busybox`、`logdw`、`ueventd-perms.sh`、Android 子集 | **整条链不需要 Docker** |
+| 3 | 手工拼 `build-boot-image.py` 的 8 个参数 | `scripts/build-boot-for-target.sh` / `install-from-release.sh` 自动完成 | 不会用错另一台机器的 boot 头 |
+| 4 | 检查散在 `install.sh`、且要求 Docker | 独立的前置检查：工具链 / 校验和 / 设备型号 / slot / root / 空闲区 | 失败发生在写入之前 |
+| 5 | 无 | 预置 rootfs（已脱敏）+ Release 资源 | 装完就是调优过的状态 |
+| 6 | 无 | 三份文档：agent 交接、人读安装、差异说明 | 换人/换 agent 可复现 |
 
-## 优化了什么（设备侧，结果在 rootfs 备份里）
+## 优化了什么
 
 同卡同小区，Android 300+ Mbps，OpenWrt 只有约 200 Mbps。定位到瓶颈是**单核软件转发**：
-`sipa_eth0` 只有一个队列、SIPA 中断全在 CPU0（A55 @768 MHz）、`nft` 里没有任何 offload、
+`sipa_eth0` 只有一个队列、SIPA 中断全落在 CPU0（A55 @768 MHz）、`nft` 里没有任何 offload、
 `sfp_core` 加载了但引用计数为 0。
 
-做了三件事：
-
-1. **让软件 flow offload 真正生效** —— 默认生成的 `flowtable ft` 只含 `{ br-lan, br-wifi }`，
-   缺真实网口，Wi-Fi 流量进不了表。补上 `sipa_eth0 / usb0 / wlan0`，并解决
-   「fw4 比 wlan0 起得早」和「表已存在时 reload 报 Resource busy」两个时序/竞态问题
-   （开机不建表 → 接口齐全后临时开启重建 → 再置回 0）。
+1. **软件 flow offload 真正生效** —— 默认 `flowtable ft` 只含 `{ br-lan, br-wifi }`，缺真实网口，
+   Wi-Fi 流量进不了表。补上 `sipa_eth0 / usb0 / wlan0`，并解决「fw4 比 wlan0 起得早」和
+   「表已存在时 reload 报 `Resource busy`」两个时序/竞态问题（开机不建表 → 接口齐全后临时开启重建 → 再置回 0）。
 2. **RPS** —— `sipa_eth0` 的 `rx-0` 设 `0x80`，收包软中断从 CPU0 挪到 CPU7（A76）。
 3. **CPU governor** —— 全部 `performance`，CPU0 768 MHz → 2002 MHz。
 
 结果：实测**超过 200 Mbps**。flow offload 是主要贡献，RPS/governor 帮收包与首包。
-
-附带两个设备侧文件：`/etc/hotplug.d/iface/99-flowtable`（开机钩子）和
-`/etc/flowtable-on.sh`（任何 `fw4 reload` 之后恢复 offload）。
+设备侧附带 `/etc/hotplug.d/iface/99-flowtable`（开机钩子）与 `/etc/flowtable-on.sh`（reload 后恢复）。
 
 ## 没改什么
 
 - 启动机制（slot b + `misc` 32 字节 + 试启动回落）
 - 分区几何（`OFF=77858865152` / `SIZE=50096766976`）
 - 内核补丁、驱动移植、rootfs 构建脚本
-- 上游 `install.sh` / `uninstall.sh`——未改一行，只用环境变量驱动
+- 上游 `install.sh` / `uninstall.sh`——未改一行
 
-## 仓库内容
+---
 
-| 路径 | 说明 |
+## 仓库结构
+
+```
+.
+├── docs/
+│   ├── CHANGES-VS-UPSTREAM.md      与上游逐项差异 + 性能定位证据
+│   ├── INSTALL-NEW-PHONE.zh-CN.md  安装说明（已 root+已扩区 / 原厂未动）
+│   ├── NEW-PHONE-INSTALL-GUIDE.md  交接给 agent 的自包含教程
+│   └── images/                     设备状态面板截图
+├── scripts/
+│   ├── install-from-release.sh     ★ 下载资源并一键安装
+│   ├── build-boot-for-target.sh    只生成目标机 boot 镜像
+│   └── install-new-phone.sh        走上游 install.sh 的包装（需 Docker）
+└── vendor/                         上游 MIT 脚本的只读副本（见 vendor/NOTICE.md）
+```
+
+## 前置条件
+
+| 项 | 要求 |
 |---|---|
-| `docs/CHANGES-VS-UPSTREAM.md` | 与上游的逐项差异、优化前后证据 |
-| `docs/NEW-PHONE-INSTALL-GUIDE.md` | 交接给另一个 agent/人执行的完整教程（自包含、带期望输出与红线） |
-| `docs/INSTALL-NEW-PHONE.zh-CN.md` | 安装说明：已 root+已扩区 / 原厂未动 两种情况 |
-| `scripts/build-boot-for-target.sh` | 用目标机自己的 `boot_a` 头生成 boot 镜像（不需要 Docker） |
-| `scripts/install-new-phone.sh` | 走上游 `install.sh` 的包装（需要 Docker，做前置检查） |
+| 机型 | ZTE 7552N（`ro.product.device=P720S20`，`ro.board.platform=ums9620`） |
+| Android | 在 **slot a** 启动，已 root（`su -c id -u` = 0），USB 调试开 |
+| 空闲区 | userdata 已缩到 64 GiB，Linux 区（扇区 152,068,096 起）已腾出 |
+| 主机 | `adb`、`python3`、`openssl`、`curl`；**不需要 Docker** |
 
-## 使用前提
+## 已知坑
 
-- 目标机是 ZTE 7552N（`ro.product.device=P720S20`，`ro.board.platform=ums9620`）
-- Android 在 **slot a** 启动，已 root（`su -c id -u` = 0），USB 调试打开
-- 主机有 `adb`、`python3`、`openssl`
-- **Linux 区已腾出**（userdata 已缩到 64 GiB）。原厂未动的机器要先 root + 缩容——
-  这一步不可逆、会清 Android 数据，本仓库不提供自动化。
-
-具体命令见 `docs/INSTALL-NEW-PHONE.zh-CN.md`。
-
-## 为什么仓库里没有镜像
-
-1. **体积**：rootfs 约 125 MB、boot 镜像 64 MB，超过 GitHub 单文件 100 MB 限制。
-2. **凭据**：设备备份出来的 rootfs 含 SSH 主机密钥、root 密码哈希、热点 PSK。
-3. **第三方权利**：rootfs 含展锐/中兴的 Wi-Fi、基带固件，不属于本项目。
-
-镜像请从自己的设备生成，流程见文档。
+1. **别用 `sysupgrade`**，别刷通用 arm64 OpenWrt 镜像。
+2. `apk upgrade` 可以，但要排除 `kernel` / `kmod-*`。
+3. 任何 `fw4 reload` 都会冲掉 flowtable，跑 `/etc/flowtable-on.sh` 恢复。
+4. 首次启动是试启动，70 秒内别连着重启两次。
+5. 装完立即改 root 密码与热点密码（Release 里的 rootfs 已脱敏，但默认值仍应替换）。
 
 ## 许可与免责
 
-脚本与文档：MIT。上游代码与内核补丁：MIT / GPL-2.0，版权归其作者。
+脚本与文档：[MIT](LICENSE)。`vendor/` 与上游代码、内核补丁：MIT / GPL-2.0，版权归原作者。
 
-实验性工具，无担保。写 `boot_b`、`misc`、缩分区都可能让设备无法启动，恢复需要 SPD/BROM
-与厂商固件；后果由设备所有者承担。
+实验性工具，无担保。写 `boot_b` / `misc` / 缩分区都可能让设备无法启动，恢复需要 SPD/BROM 与厂商固件；
+后果由设备所有者承担。
