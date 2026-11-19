@@ -192,9 +192,10 @@ static void wan6_refresh(void)
 }
 
 static int clash_up = 0, clash_proxies = 0, clash_port = 0, clash_conns = 0;
-static int clash_mem_kb = 0, clash_uptime = 0;
+static int clash_mem_kb = 0, clash_uptime = 0, clash_cpu = 0, clash_rules = 0, clash_tun = 0;
 static double clash_down = 0, clash_up_b = 0;
 static char clash_mode[24] = "-", clash_pid[16] = "", clash_ver[24] = "-", clash_now[48] = "-", sc_delay[16] = "", sc_speed[16] = "";
+static char clash_scver[24] = "-";
 static char sc_now[64] = "", sc_now_delay[12] = "";   /* node the panel is really using, and its last delay */
 static double rate_hist[60], rate_hist_tx[60];
 
@@ -212,6 +213,32 @@ static int clash_is_group(const char *t)
 	       strcmp(t, "Relay") == 0 || strcmp(t, "Direct") == 0 ||
 	       strcmp(t, "Reject") == 0 || strcmp(t, "RejectDrop") == 0 ||
 	       strcmp(t, "Compatible") == 0 || strcmp(t, "Pass") == 0;
+}
+
+/* utime+stime of the core, in clock ticks; -1 when /proc/<pid>/stat is unreadable. */
+static long clash_cpu_ticks(void)
+{
+	char path[64], buf[1024];
+	if (!clash_pid[0]) return -1;
+	snprintf(path, sizeof path, "/proc/%s/stat", clash_pid);
+	FILE *f = fopen(path, "r");
+	if (!f) return -1;
+	size_t n = fread(buf, 1, sizeof buf - 1, f);
+	fclose(f);
+	buf[n] = 0;
+	char *p = strrchr(buf, ')');          /* comm may contain spaces and parens */
+	if (!p) return -1;
+	p += 2;                               /* skip ") " */
+	int field = 3;
+	long ut = 0, st = 0;
+	char *tok = strtok(p, " ");
+	while (tok) {
+		if (field == 14) ut = atol(tok);
+		else if (field == 15) { st = atol(tok); break; }
+		field++;
+		tok = strtok(NULL, " ");
+	}
+	return ut + st;
 }
 
 static void clash_refresh(int force)
@@ -239,6 +266,8 @@ static void clash_refresh(int force)
 		strcpy(clash_mode, "-"); strcpy(clash_ver, "-"); strcpy(clash_now, "-");
 		clash_proxies = clash_conns = 0; clash_down = clash_up_b = 0; clash_port = 0;
 		clash_mem_kb = clash_uptime = 0;
+		clash_cpu = clash_rules = clash_tun = 0;
+		strcpy(clash_scver, "-");
 		return;
 	}
 
@@ -264,6 +293,27 @@ static void clash_refresh(int force)
 		}
 	}
 
+	/* CPU% of the core, sampled between refreshes (~5 s). */
+	{
+		static long long prev = -1;
+		static time_t prev_t = 0;
+		long long ticks = clash_cpu_ticks();
+		clash_cpu = 0;
+		if (ticks >= 0 && prev >= 0 && now > prev_t) {
+			long hz = sysconf(_SC_CLK_TCK);
+			if (hz <= 0) hz = 100;
+			double pct = (double)(ticks - prev) * 100.0 / ((double)hz * (double)(now - prev_t));
+			clash_cpu = (int)(pct + 0.5);
+			if (clash_cpu > 999) clash_cpu = 999;
+		}
+		prev = ticks;
+		prev_t = now;
+	}
+
+	read_file_str("/etc/ShellCrash/version", clash_scver, sizeof clash_scver);
+	if (!clash_scver[0]) strcpy(clash_scver, "-");
+	else { char *r = strstr(clash_scver, "release"); if (r) *r = 0; }
+
 	if (!clash_port) {
 		static const int ports[] = { 9999, 9090, 9091, 6170 };
 		for (int i = 0; i < 4; i++) {
@@ -278,8 +328,11 @@ static void clash_refresh(int force)
 	if (clash_get(clash_port, "/version", buf, sizeof buf))
 		json_str_in(buf, NULL, "version", clash_ver, sizeof clash_ver);
 
-	if (clash_get(clash_port, "/configs", buf, sizeof buf))
+	clash_tun = 0;
+	if (clash_get(clash_port, "/configs", buf, sizeof buf)) {
 		json_str_in(buf, NULL, "mode", clash_mode, sizeof clash_mode);
+		clash_tun = strstr(buf, "\"tun\":{\"enable\":true") != NULL;
+	}
 
 	clash_proxies = 0;
 	clash_now[0] = '-'; clash_now[1] = 0;
@@ -306,6 +359,12 @@ static void clash_refresh(int force)
 				}
 			}
 		}
+	}
+
+	clash_rules = 0;
+	if (clash_get(clash_port, "/providers/rules", buf, sizeof buf)) {
+		const char *q = buf;
+		while ((q = strstr(q, "\"ruleCount\":"))) { clash_rules += atoi(q + 12); q += 12; }
 	}
 
 	clash_conns = 0;
@@ -1266,59 +1325,6 @@ static void page_clients(int P, int CW)
 	}
 }
 
-/* ---- scaled mixed text, for the one-line "current node" / delay readout ---- */
-static void draw_cjk_scaled(int x, int y, const unsigned char *g, u32 color, int scale)
-{
-	for (int r = 0; r < 16; r++) {
-		unsigned bits = ((unsigned)g[r * 2] << 8) | g[r * 2 + 1];
-		for (int c = 0; c < 16; c++)
-			if (bits & (0x8000u >> c))
-				fill_rect(x + c * scale, y + r * scale, scale, scale, color);
-	}
-}
-
-static int body_width(const char *s, int scale)
-{
-	int w = 0;
-	while (*s) {
-		unsigned cp;
-		int n = utf8_next(s, &cp);
-		s += n;
-		if (cp < 0x20) continue;
-		if (cp < 0x80) w += 8 * scale;
-		else if (cp >= 0x1F000 || cp == 0xFE0F) continue;
-		else w += 16 * scale;
-	}
-	return w;
-}
-
-/* Draw one line at an integer scale; returns the width used. Stops at maxx rather than wrapping. */
-static int draw_body_scaled(int x, int y, int maxx, const char *s, u32 color, int scale)
-{
-	int cx = x;
-	while (*s) {
-		unsigned cp;
-		int n = utf8_next(s, &cp);
-		s += n;
-		if (cp < 0x20) continue;
-		if (cp < 0x80) {
-			if (cx + 8 * scale > maxx) break;
-			char b[2] = { (char)cp, 0 };
-			draw_text(cx, y, scale, color, b);
-			cx += 8 * scale;
-		} else if (cp >= 0x1F000 || cp == 0xFE0F) {
-			continue;
-		} else {
-			const unsigned char *g = cjk_glyph(cp);
-			if (cx + 16 * scale > maxx) break;
-			if (g) draw_cjk_scaled(cx, y, g, color, scale);
-			else draw_text(cx, y, scale, color, "?");
-			cx += 16 * scale;
-		}
-	}
-	return cx - x;
-}
-
 static void fmt_duration(int sec, char *out, size_t n)
 {
 	if (sec >= 3600) snprintf(out, n, "%dh%02dm", sec / 3600, (sec % 3600) / 60);
@@ -1352,7 +1358,7 @@ static void page_settings(int P, int CW)
 
 	card(P, 356, CW, 320);
 	draw_text(P + 18, 374, 1, DIM, "ShellCrash / mihomo");
-	snprintf(b, sizeof b, "%s", clash_ver);
+	snprintf(b, sizeof b, "SC %s / %s", clash_scver, clash_ver);
 	draw_text(P + CW - 18 - text_w(1, b), 374, 1, DIM, b);
 
 	if (access("/tmp/sc-refreshing", F_OK) == 0) {
@@ -1400,7 +1406,18 @@ static void page_settings(int P, int CW)
 		human_bytes_short((unsigned long long)clash_up_b, u, sizeof u);
 		draw_text(P + 252, 486, 1, TXT, u);
 
-		fill_rect(P + 18, 512, CW - 36, 1, 0x003A3A3C);
+		/* rule-provider entries / TUN / core CPU */
+		draw_body_utf8(P + 18, 514, P + 50, 530, "规则", DIM);
+		if (clash_rules >= 1000) snprintf(b, sizeof b, "%dk", clash_rules / 1000);
+		else snprintf(b, sizeof b, "%d", clash_rules);
+		draw_text(P + 54, 514, 1, TXT, b);
+		draw_text(P + 140, 514, 1, DIM, "TUN");
+		draw_text(P + 172, 514, 1, clash_tun ? OK : DIM, clash_tun ? "on" : "off");
+		draw_text(P + 240, 514, 1, DIM, "CPU");
+		snprintf(b, sizeof b, "%d%%", clash_cpu);
+		draw_text(P + 276, 514, 1, TXT, b);
+
+		fill_rect(P + 18, 538, CW - 36, 1, 0x003A3A3C);
 
 		/* which node is actually carrying the traffic: ask mihomo, at most every 10 s,
 		 * off the draw path (cxnow writes /tmp/sc-now* and we just read the files) */
@@ -1410,21 +1427,18 @@ static void page_settings(int P, int CW)
 		read_file_str("/tmp/sc-now", sc_now, sizeof sc_now);
 		read_file_str("/tmp/sc-now-delay", sc_now_delay, sizeof sc_now_delay);
 
-		draw_body_utf8(P + 18, 522, P + 100, 538, "当前节点", DIM);
-		{
-			const char *nm = sc_now[0] ? sc_now : "-";
-			int scale = body_width(nm, 2) <= (P + CW - 18) - (P + 18) ? 2 : 1;
-			draw_body_scaled(P + 18, 546, P + CW - 18, nm, TXT, scale);
-		}
+		draw_body_utf8(P + 18, 548, P + 100, 564, "当前节点", DIM);
+		if (sc_now[0]) draw_body_utf8(P + 18, 570, P + CW - 18, 586, sc_now, TXT);
+		else draw_text(P + 18, 570, 1, DIM, "-");
 
-		draw_body_utf8(P + 18, 590, P + 60, 606, "延时", DIM);
+		draw_body_utf8(P + 18, 596, P + 60, 612, "延时", DIM);
 		if (access("/tmp/sc-testing", F_OK) == 0)
-			draw_text(P + 18, 612, 2, WARN, "testing...");
+			draw_text(P + 18, 618, 2, WARN, "testing...");
 		else if (sc_now_delay[0] && strcmp(sc_now_delay, "-1") != 0) {
 			snprintf(b, sizeof b, "%s ms", sc_now_delay);
-			draw_text(P + 18, 612, 2, OK, b);
+			draw_text(P + 18, 618, 2, OK, b);
 		} else
-			draw_text(P + 18, 612, 2, DIM, "-");
+			draw_text(P + 18, 618, 2, DIM, "-");
 	}
 
 	add_btn(P, 700, (CW - 10) / 2, 56, "自动优选", A_SCTEST);
