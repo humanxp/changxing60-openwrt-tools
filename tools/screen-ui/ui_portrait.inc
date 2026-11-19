@@ -262,12 +262,17 @@ static void clash_refresh(int force)
 		if (nl) *nl = 0;
 		snprintf(clash_pid, sizeof clash_pid, "%s", buf);
 	}
+	/* ShellCrash's own version is independent of the core, so keep showing it while the core is
+	 * down (the 刷新节点 flow restarts it) instead of flashing "SC - / -" for half a minute. */
+	read_file_str("/etc/ShellCrash/version", clash_scver, sizeof clash_scver);
+	if (!clash_scver[0]) strcpy(clash_scver, "-");
+	else { char *r = strstr(clash_scver, "release"); if (r) *r = 0; }
+
 	if (!clash_up) {
 		strcpy(clash_mode, "-"); strcpy(clash_ver, "-"); strcpy(clash_now, "-");
 		clash_proxies = clash_conns = 0; clash_down = clash_up_b = 0; clash_port = 0;
 		clash_mem_kb = clash_uptime = 0;
 		clash_cpu = clash_rules = clash_tun = 0;
-		strcpy(clash_scver, "-");
 		return;
 	}
 
@@ -309,10 +314,6 @@ static void clash_refresh(int force)
 		prev = ticks;
 		prev_t = now;
 	}
-
-	read_file_str("/etc/ShellCrash/version", clash_scver, sizeof clash_scver);
-	if (!clash_scver[0]) strcpy(clash_scver, "-");
-	else { char *r = strstr(clash_scver, "release"); if (r) *r = 0; }
 
 	if (!clash_port) {
 		static const int ports[] = { 9999, 9090, 9091, 6170 };
@@ -1425,7 +1426,7 @@ static void page_settings(int P, int CW)
 	draw_text(P + CW - 18 - text_w(1, b), 374, 1, DIM, b);
 
 	if (access("/tmp/sc-refreshing", F_OK) == 0) {
-		draw_cn(P + 18, 404, 1, "刷新中", WARN);
+		draw_body_utf8(P + 18, 404, P + 120, 420, "刷新中", WARN);
 		draw_text(P + 18, 432, 1, DIM, "subscription + core restart");
 	} else if (!clash_up) {
 		draw_cn(P + 18, 404, 1, "已停止", BAD);
