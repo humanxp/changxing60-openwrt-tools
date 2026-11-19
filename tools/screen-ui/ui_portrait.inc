@@ -1325,37 +1325,40 @@ static void page_clients(int P, int CW)
 	}
 }
 
-/* ---- 1.5x mixed text (24px CJK / 12px ASCII): the node name needs a step between the
- * normal 16px body and the full 32px metric font. Nearest-neighbour 3-to-2 scaling. ---- */
-static void draw_ascii_15(int x, int y, u32 color, const char *s)
+/* ---- fractional mixed text (nearest-neighbour num/den): the node name sits at 3:2
+ * (24px CJK / 12px ASCII), the delay number a step larger at 7:4 (28px / 14px). ---- */
+static void draw_ascii_fx(int x, int y, u32 color, const char *s, int num, int den)
 {
+	int aw = 8 * num / den, ah = 16 * num / den;
 	for (; *s; s++) {
 		unsigned char ch = (unsigned char)*s;
 		const unsigned char *g = font8x16 + (ch < 0x20 ? 0 : ch) * 16;
-		for (int dy = 0; dy < 24; dy++) {
-			int sy = dy * 2 / 3;
+		for (int dy = 0; dy < ah; dy++) {
+			int sy = dy * den / num;
 			unsigned char bits = g[sy];
-			for (int dx = 0; dx < 12; dx++)
-				if (bits & (0x80 >> (dx * 2 / 3)))
+			for (int dx = 0; dx < aw; dx++)
+				if (bits & (0x80 >> (dx * den / num)))
 					fill_rect(x + dx, y + dy, 1, 1, color);
 		}
-		x += 12;
+		x += aw;
 	}
 }
 
-static void draw_cjk_15(int x, int y, const unsigned char *g, u32 color)
+static void draw_cjk_fx(int x, int y, const unsigned char *g, u32 color, int num, int den)
 {
-	for (int dy = 0; dy < 24; dy++) {
-		int sy = dy * 2 / 3;
+	int cw = 16 * num / den, ch = 16 * num / den;
+	for (int dy = 0; dy < ch; dy++) {
+		int sy = dy * den / num;
 		unsigned bits = ((unsigned)g[sy * 2] << 8) | g[sy * 2 + 1];
-		for (int dx = 0; dx < 24; dx++)
-			if (bits & (0x8000u >> (dx * 2 / 3)))
+		for (int dx = 0; dx < cw; dx++)
+			if (bits & (0x8000u >> (dx * den / num)))
 				fill_rect(x + dx, y + dy, 1, 1, color);
 	}
 }
 
-static int draw_body_15(int x, int y, int maxx, const char *s, u32 color)
+static int draw_body_fx(int x, int y, int maxx, const char *s, u32 color, int num, int den)
 {
+	int aw = 8 * num / den, cw = 16 * num / den;
 	int cx = x;
 	while (*s) {
 		unsigned cp;
@@ -1363,21 +1366,26 @@ static int draw_body_15(int x, int y, int maxx, const char *s, u32 color)
 		s += n;
 		if (cp < 0x20) continue;
 		if (cp < 0x80) {
-			if (cx + 12 > maxx) break;
+			if (cx + aw > maxx) break;
 			char b[2] = { (char)cp, 0 };
-			draw_ascii_15(cx, y, color, b);
-			cx += 12;
+			draw_ascii_fx(cx, y, color, b, num, den);
+			cx += aw;
 		} else if (cp >= 0x1F000 || cp == 0xFE0F) {
 			continue;
 		} else {
 			const unsigned char *g = cjk_glyph(cp);
-			if (cx + 24 > maxx) break;
-			if (g) draw_cjk_15(cx, y, g, color);
-			else draw_ascii_15(cx, y, color, "?");
-			cx += 24;
+			if (cx + cw > maxx) break;
+			if (g) draw_cjk_fx(cx, y, g, color, num, den);
+			else draw_ascii_fx(cx, y, color, "?", num, den);
+			cx += cw;
 		}
 	}
 	return cx - x;
+}
+
+static int draw_body_15(int x, int y, int maxx, const char *s, u32 color)
+{
+	return draw_body_fx(x, y, maxx, s, color, 3, 2);
 }
 
 static void fmt_duration(int sec, char *out, size_t n)
@@ -1488,12 +1496,12 @@ static void page_settings(int P, int CW)
 
 		draw_body_utf8(P + 18, 600, P + 60, 616, "延时", DIM);
 		if (access("/tmp/sc-testing", F_OK) == 0)
-			draw_body_15(P + 18, 622, P + CW - 18, "testing...", WARN);
+			draw_body_fx(P + 18, 622, P + CW - 18, "testing...", WARN, 7, 4);
 		else if (sc_now_delay[0] && strcmp(sc_now_delay, "-1") != 0) {
 			snprintf(b, sizeof b, "%s ms", sc_now_delay);
-			draw_body_15(P + 18, 622, P + CW - 18, b, OK);
+			draw_body_fx(P + 18, 622, P + CW - 18, b, OK, 7, 4);
 		} else
-			draw_body_15(P + 18, 622, P + CW - 18, "-", DIM);
+			draw_body_fx(P + 18, 622, P + CW - 18, "-", DIM, 7, 4);
 	}
 
 	add_btn(P, 700, (CW - 10) / 2, 56, "自动优选", A_SCTEST);
