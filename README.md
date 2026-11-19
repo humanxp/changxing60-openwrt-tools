@@ -136,6 +136,22 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 因此 `vendor/boot/init` 固定为**实测可用**的版本（见 `vendor/NOTICE.md`）。
 如果你自己构建时遇到"USB 网卡有、拿不到 IP"，先检查 init 版本。
 
+2026-11-19 晚：**格式化 Linux 区 + 从 GitHub 下载 v1.0.6 + 安装**，端到端复跑一次：
+
+| 检查 | 结果 |
+|---|---|
+| 下载 + SHA256 | ✅ 4 个资源 |
+| ext4 重建 + 解包 | ✅ `CHANGXING60-INSTALL-OK` |
+| boot_b / misc | ✅ |
+| 启动耗时 | ⏱ 约 **5 分钟**（新格式化的区首次启动较慢） |
+| 系统 | ✅ OpenWrt 25.12.5 / 5.4.254-gb50db5b6224c |
+| 面板二进制 | ✅ `2d2062c7…`（含两处卡顿修复） |
+| flowtable | ✅ 五设备齐全 |
+| 5G WAN | ✅ ping 通 |
+| ShellCrash | ✅ 在，无配置、无自启 |
+| 个人数据 | ✅ 0 命中 |
+
+
 ## 已知坑
 
 1. **别用 `sysupgrade`**，别刷通用 arm64 OpenWrt 镜像。
