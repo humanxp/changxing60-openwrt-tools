@@ -46,6 +46,8 @@ GB2312 之外的其它 emoji 仍会被跳过。
 
 ## 已知边界
 
+- 源码：`tools/screen-ui/cxpick.c`、`tools/screen-ui/changxing60-sc-pick.sh`；按压反馈在
+  `tools/screen-ui/ui_portrait.inc`，`cxnow` 在 `tools/cxnow.c`。
 - 配置里没有「节点选择」这类主组时，退回第一个非内置 Selector；一个都没有才用 `GLOBAL`。
 - 正常走 `节点选择 → 自动选择` 时，`自动优选` 测的是 URLTest 组的全部节点。但若主组当前
   直接指向 `DIRECT` 这类叶子（没有下一级组），只能在主组的成员（子组）里选最快的子组；

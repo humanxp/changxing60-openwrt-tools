@@ -108,6 +108,9 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 │   ├── install-from-release.sh     ★ 下载资源并一键安装
 │   ├── build-boot-for-target.sh    只生成目标机 boot 镜像
 │   └── install-new-phone.sh        走上游 install.sh 的包装（需 Docker）
+├── tools/
+│   ├── cxnow.c                     当前节点 + 延时（面板「节点」行）
+│   └── screen-ui/                  内屏界面源码：base 绘制程序 + overlay + 构建脚本
 └── vendor/                         上游 MIT 脚本的只读副本（见 vendor/NOTICE.md）
 ```
 
