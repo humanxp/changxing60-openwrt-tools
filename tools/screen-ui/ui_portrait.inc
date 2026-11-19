@@ -192,6 +192,7 @@ static void wan6_refresh(void)
 }
 
 static int clash_up = 0, clash_proxies = 0, clash_port = 0, clash_conns = 0;
+static int clash_mem_kb = 0, clash_uptime = 0;
 static double clash_down = 0, clash_up_b = 0;
 static char clash_mode[24] = "-", clash_pid[16] = "", clash_ver[24] = "-", clash_now[48] = "-", sc_delay[16] = "", sc_speed[16] = "";
 static char sc_now[64] = "", sc_now_delay[12] = "";   /* node the panel is really using, and its last delay */
@@ -237,7 +238,30 @@ static void clash_refresh(int force)
 	if (!clash_up) {
 		strcpy(clash_mode, "-"); strcpy(clash_ver, "-"); strcpy(clash_now, "-");
 		clash_proxies = clash_conns = 0; clash_down = clash_up_b = 0; clash_port = 0;
+		clash_mem_kb = clash_uptime = 0;
 		return;
+	}
+
+	/* Panel-side detail: the core's RSS and how long ShellCrash has been up. The start time is
+	 * written by its init script; /proc/<pid>/status gives the resident size. */
+	clash_mem_kb = 0;
+	if (clash_pid[0]) {
+		char path[64], line[160];
+		snprintf(path, sizeof path, "/proc/%s/status", clash_pid);
+		FILE *f = fopen(path, "r");
+		if (f) {
+			while (fgets(line, sizeof line, f))
+				if (!strncmp(line, "VmRSS:", 6)) { clash_mem_kb = atoi(line + 6); break; }
+			fclose(f);
+		}
+	}
+	clash_uptime = 0;
+	{
+		char st[32];
+		if (read_file_str("/tmp/ShellCrash/crash_start_time", st, sizeof st) == 0) {
+			long long t0 = atoll(st);
+			if (t0 > 0 && now > t0 && now - t0 < 30 * 86400) clash_uptime = (int)(now - t0);
+		}
 	}
 
 	if (!clash_port) {
@@ -1242,9 +1266,70 @@ static void page_clients(int P, int CW)
 	}
 }
 
+/* ---- scaled mixed text, for the one-line "current node" / delay readout ---- */
+static void draw_cjk_scaled(int x, int y, const unsigned char *g, u32 color, int scale)
+{
+	for (int r = 0; r < 16; r++) {
+		unsigned bits = ((unsigned)g[r * 2] << 8) | g[r * 2 + 1];
+		for (int c = 0; c < 16; c++)
+			if (bits & (0x8000u >> c))
+				fill_rect(x + c * scale, y + r * scale, scale, scale, color);
+	}
+}
+
+static int body_width(const char *s, int scale)
+{
+	int w = 0;
+	while (*s) {
+		unsigned cp;
+		int n = utf8_next(s, &cp);
+		s += n;
+		if (cp < 0x20) continue;
+		if (cp < 0x80) w += 8 * scale;
+		else if (cp >= 0x1F000 || cp == 0xFE0F) continue;
+		else w += 16 * scale;
+	}
+	return w;
+}
+
+/* Draw one line at an integer scale; returns the width used. Stops at maxx rather than wrapping. */
+static int draw_body_scaled(int x, int y, int maxx, const char *s, u32 color, int scale)
+{
+	int cx = x;
+	while (*s) {
+		unsigned cp;
+		int n = utf8_next(s, &cp);
+		s += n;
+		if (cp < 0x20) continue;
+		if (cp < 0x80) {
+			if (cx + 8 * scale > maxx) break;
+			char b[2] = { (char)cp, 0 };
+			draw_text(cx, y, scale, color, b);
+			cx += 8 * scale;
+		} else if (cp >= 0x1F000 || cp == 0xFE0F) {
+			continue;
+		} else {
+			const unsigned char *g = cjk_glyph(cp);
+			if (cx + 16 * scale > maxx) break;
+			if (g) draw_cjk_scaled(cx, y, g, color, scale);
+			else draw_text(cx, y, scale, color, "?");
+			cx += 16 * scale;
+		}
+	}
+	return cx - x;
+}
+
+static void fmt_duration(int sec, char *out, size_t n)
+{
+	if (sec >= 3600) snprintf(out, n, "%dh%02dm", sec / 3600, (sec % 3600) / 60);
+	else if (sec >= 60) snprintf(out, n, "%dm", sec / 60);
+	else snprintf(out, n, "%ds", sec);
+}
+
 static void page_settings(int P, int CW)
 {
 	const u32 TXT = 0x00FFFFFF, DIM = 0x008E8E93, OK = 0x0030D158;
+	const u32 WARN = 0x00FF9F0A, BAD = 0x00FF453A;
 	const char *lv[] = { "100%", "75%", "50%", "25%", "0%" };
 	char b[64], d[32], u[32];
 	int used_kb = mem_total_kb - mem_avail_kb;
@@ -1265,60 +1350,81 @@ static void page_settings(int P, int CW)
 	add_btn(P, 284, CW, 56, "重启", A_REBOOT);
 	draw_btn(&btns[nbtn - 1], 0x0033191C, 0x00FF453A);
 
-	card(P, 356, CW, 110);
-	draw_cn(P + 18, 372, 1, "热点", DIM);
-	snprintf(b, sizeof b, "%s", ssid);
-	draw_text(P + 90, 372, 1, TXT, b);
-	draw_text(P + 18, 396, 1, DIM, "password");
-	snprintf(b, sizeof b, "%s", psk[0] && strcmp(psk, "-") ? psk : "(open)");
-	draw_text(P + 110, 396, 1, TXT, b);
-	snprintf(b, sizeof b, "%s   ch%s   %d client(s)", wifi_addr, wifi_ch, wifi_clients);
-	draw_text(P + 18, 420, 1, DIM, b);
+	card(P, 356, CW, 320);
+	draw_text(P + 18, 374, 1, DIM, "ShellCrash / mihomo");
+	snprintf(b, sizeof b, "%s", clash_ver);
+	draw_text(P + CW - 18 - text_w(1, b), 374, 1, DIM, b);
 
-	card(P, 486, CW, 200);
-	draw_text(P + 18, 500, 1, DIM, "ShellCrash / mihomo");
 	if (access("/tmp/sc-refreshing", F_OK) == 0) {
-		draw_text(P + 18, 526, 1, 0x00FF9F0A, "refreshing nodes...");
+		draw_cn(P + 18, 404, 1, "刷新中", WARN);
+		draw_text(P + 18, 432, 1, DIM, "subscription + core restart");
 	} else if (!clash_up) {
-		draw_cn(P + 18, 526, 1, "已停止", 0x00FF453A);
-		draw_text(P + 18, 552, 1, DIM, "start: /etc/init.d/shellcrash start");
+		draw_cn(P + 18, 404, 1, "已停止", BAD);
+		draw_text(P + 18, 432, 1, DIM, "/etc/init.d/shellcrash start");
 	} else {
-		draw_cn(P + 18, 526, 1, "运行中", OK);
+		/* status: state, pid, and how long the core has been up */
+		draw_cn(P + 18, 402, 1, "运行中", OK);
 		snprintf(b, sizeof b, "pid %s", clash_pid);
-		draw_text(P + 100, 526, 1, DIM, b);
-		snprintf(b, sizeof b, "mode %s", clash_mode);
-		draw_text(P + 18, 552, 1, TXT, b);
-		draw_cn(P + 18, 578, 1, "节点", DIM);
-		snprintf(b, sizeof b, "%d", clash_proxies);
-		draw_text(P + 70, 578, 1, TXT, b);
-		draw_cn(P + 140, 578, 1, "连接", DIM);
-		snprintf(b, sizeof b, "%d", clash_conns);
-		draw_text(P + 192, 578, 1, TXT, b);
-		draw_cn(P + 18, 604, 1, "下载", DIM);
-		human_bytes_short((unsigned long long)clash_down, d, sizeof d);
-		draw_text(P + 70, 604, 1, TXT, d);
-		draw_cn(P + 160, 604, 1, "上传", DIM);
-		human_bytes_short((unsigned long long)clash_up_b, u, sizeof u);
-		draw_text(P + 212, 604, 1, TXT, u);
-		{
-			/* which node is actually carrying the traffic: ask mihomo, at most every 10 s,
-			 * off the draw path (cxnow writes /tmp/sc-now* and we just read the files) */
-			static time_t nowq = 0;
-			time_t tnow = time(NULL);
-			if (tnow - nowq >= 10) { nowq = tnow; system("/usr/bin/cxnow >/dev/null 2>&1 &"); }
-			read_file_str("/tmp/sc-now", sc_now, sizeof sc_now);
-			read_file_str("/tmp/sc-now-delay", sc_now_delay, sizeof sc_now_delay);
+		draw_text(P + 88, 402, 1, DIM, b);
+		if (clash_uptime > 0) {
+			char up[16];
+			fmt_duration(clash_uptime, up, sizeof up);
+			snprintf(b, sizeof b, "up %s", up);
+			draw_text(P + CW - 18 - text_w(1, b), 402, 1, DIM, b);
 		}
-		draw_body_utf8(P + 18, 630, P + 66, 646, "节点", DIM);
-		if (sc_now[0]) draw_body_utf8(P + 70, 628, P + CW - 18, 646, sc_now, TXT);
-		else draw_text(P + 70, 630, 1, DIM, "-");
-		draw_body_utf8(P + 18, 656, P + 66, 672, "延时", DIM);
+
+		/* mode / controller port / RSS */
+		draw_body_utf8(P + 18, 430, P + 60, 446, "模式", DIM);
+		draw_text(P + 62, 430, 1, TXT, clash_mode);
+		draw_body_utf8(P + 150, 430, P + 192, 446, "端口", DIM);
+		snprintf(b, sizeof b, "%d", clash_port);
+		draw_text(P + 194, 430, 1, TXT, b);
+		draw_body_utf8(P + 270, 430, P + 312, 446, "内存", DIM);
+		if (clash_mem_kb > 0) snprintf(b, sizeof b, "%dM", clash_mem_kb / 1024);
+		else snprintf(b, sizeof b, "-");
+		draw_text(P + 322, 430, 1, TXT, b);
+
+		/* rule count / live connections */
+		draw_cn(P + 18, 458, 1, "节点", DIM);
+		snprintf(b, sizeof b, "%d", clash_proxies);
+		draw_text(P + 70, 458, 1, TXT, b);
+		draw_cn(P + 150, 458, 1, "连接", DIM);
+		snprintf(b, sizeof b, "%d", clash_conns);
+		draw_text(P + 202, 458, 1, TXT, b);
+
+		/* traffic since the core started */
+		draw_cn(P + 18, 486, 1, "下载", DIM);
+		human_bytes_short((unsigned long long)clash_down, d, sizeof d);
+		draw_text(P + 70, 486, 1, TXT, d);
+		draw_cn(P + 200, 486, 1, "上传", DIM);
+		human_bytes_short((unsigned long long)clash_up_b, u, sizeof u);
+		draw_text(P + 252, 486, 1, TXT, u);
+
+		fill_rect(P + 18, 512, CW - 36, 1, 0x003A3A3C);
+
+		/* which node is actually carrying the traffic: ask mihomo, at most every 10 s,
+		 * off the draw path (cxnow writes /tmp/sc-now* and we just read the files) */
+		static time_t nowq = 0;
+		time_t tnow = time(NULL);
+		if (tnow - nowq >= 10) { nowq = tnow; system("/usr/bin/cxnow >/dev/null 2>&1 &"); }
+		read_file_str("/tmp/sc-now", sc_now, sizeof sc_now);
+		read_file_str("/tmp/sc-now-delay", sc_now_delay, sizeof sc_now_delay);
+
+		draw_body_utf8(P + 18, 522, P + 100, 538, "当前节点", DIM);
+		{
+			const char *nm = sc_now[0] ? sc_now : "-";
+			int scale = body_width(nm, 2) <= (P + CW - 18) - (P + 18) ? 2 : 1;
+			draw_body_scaled(P + 18, 546, P + CW - 18, nm, TXT, scale);
+		}
+
+		draw_body_utf8(P + 18, 590, P + 60, 606, "延时", DIM);
 		if (access("/tmp/sc-testing", F_OK) == 0)
-			draw_text(P + 70, 656, 1, 0x00FF9F0A, "testing...");
-		else if (sc_now_delay[0] && strcmp(sc_now_delay, "-1") != 0)
-			{ snprintf(b, sizeof b, "%s ms", sc_now_delay); draw_text(P + 70, 656, 1, OK, b); }
-		else
-			draw_text(P + 70, 656, 1, DIM, "-");
+			draw_text(P + 18, 612, 2, WARN, "testing...");
+		else if (sc_now_delay[0] && strcmp(sc_now_delay, "-1") != 0) {
+			snprintf(b, sizeof b, "%s ms", sc_now_delay);
+			draw_text(P + 18, 612, 2, OK, b);
+		} else
+			draw_text(P + 18, 612, 2, DIM, "-");
 	}
 
 	add_btn(P, 700, (CW - 10) / 2, 56, "自动优选", A_SCTEST);

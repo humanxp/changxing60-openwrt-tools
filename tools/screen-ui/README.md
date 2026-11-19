@@ -12,7 +12,8 @@ aarch64 二进制，无 libdrm、无浏览器、无字体引擎。参考了荣�
 - 信号：NR 频段 / PCI / RSRP / SINR / 邻区
 - 流量：本次开机与本月流量
 - 短信：收件箱正文（`cjk.inc` 的 GB2312 点阵渲染）
-- 设置：亮度、切安卓、重启、热点信息，以及 ShellCrash 卡片
+- 设置：亮度、切安卓、重启，以及整块 ShellCrash 卡片（版本、运行时长、模式/端口/内存、
+  节点/连接数、上下行总量；当前节点与延时用 2× 字号）
   - 「自动优选」：`changxing60-sc-pick` → `cxpick`，测当前链路里最后一级组的全部节点并选最快
   - 「刷新节点」：`changxing60-sc-refresh`，重拉订阅并重启核心，期间显示 `refreshing nodes...`
   - 节点 / 延时：`cxnow` 每 10 秒把当前叶子节点写入 `/tmp/sc-now*`；国旗 emoji 已转成
