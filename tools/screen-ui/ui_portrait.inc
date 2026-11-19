@@ -1325,6 +1325,61 @@ static void page_clients(int P, int CW)
 	}
 }
 
+/* ---- 1.5x mixed text (24px CJK / 12px ASCII): the node name needs a step between the
+ * normal 16px body and the full 32px metric font. Nearest-neighbour 3-to-2 scaling. ---- */
+static void draw_ascii_15(int x, int y, u32 color, const char *s)
+{
+	for (; *s; s++) {
+		unsigned char ch = (unsigned char)*s;
+		const unsigned char *g = font8x16 + (ch < 0x20 ? 0 : ch) * 16;
+		for (int dy = 0; dy < 24; dy++) {
+			int sy = dy * 2 / 3;
+			unsigned char bits = g[sy];
+			for (int dx = 0; dx < 12; dx++)
+				if (bits & (0x80 >> (dx * 2 / 3)))
+					fill_rect(x + dx, y + dy, 1, 1, color);
+		}
+		x += 12;
+	}
+}
+
+static void draw_cjk_15(int x, int y, const unsigned char *g, u32 color)
+{
+	for (int dy = 0; dy < 24; dy++) {
+		int sy = dy * 2 / 3;
+		unsigned bits = ((unsigned)g[sy * 2] << 8) | g[sy * 2 + 1];
+		for (int dx = 0; dx < 24; dx++)
+			if (bits & (0x8000u >> (dx * 2 / 3)))
+				fill_rect(x + dx, y + dy, 1, 1, color);
+	}
+}
+
+static int draw_body_15(int x, int y, int maxx, const char *s, u32 color)
+{
+	int cx = x;
+	while (*s) {
+		unsigned cp;
+		int n = utf8_next(s, &cp);
+		s += n;
+		if (cp < 0x20) continue;
+		if (cp < 0x80) {
+			if (cx + 12 > maxx) break;
+			char b[2] = { (char)cp, 0 };
+			draw_ascii_15(cx, y, color, b);
+			cx += 12;
+		} else if (cp >= 0x1F000 || cp == 0xFE0F) {
+			continue;
+		} else {
+			const unsigned char *g = cjk_glyph(cp);
+			if (cx + 24 > maxx) break;
+			if (g) draw_cjk_15(cx, y, g, color);
+			else draw_ascii_15(cx, y, color, "?");
+			cx += 24;
+		}
+	}
+	return cx - x;
+}
+
 static void fmt_duration(int sec, char *out, size_t n)
 {
 	if (sec >= 3600) snprintf(out, n, "%dh%02dm", sec / 3600, (sec % 3600) / 60);
@@ -1428,17 +1483,17 @@ static void page_settings(int P, int CW)
 		read_file_str("/tmp/sc-now-delay", sc_now_delay, sizeof sc_now_delay);
 
 		draw_body_utf8(P + 18, 548, P + 100, 564, "当前节点", DIM);
-		if (sc_now[0]) draw_body_utf8(P + 18, 570, P + CW - 18, 586, sc_now, TXT);
-		else draw_text(P + 18, 570, 1, DIM, "-");
+		if (sc_now[0]) draw_body_15(P + 18, 568, P + CW - 18, sc_now, TXT);
+		else draw_text(P + 18, 568, 1, DIM, "-");
 
-		draw_body_utf8(P + 18, 596, P + 60, 612, "延时", DIM);
+		draw_body_utf8(P + 18, 600, P + 60, 616, "延时", DIM);
 		if (access("/tmp/sc-testing", F_OK) == 0)
-			draw_text(P + 18, 618, 2, WARN, "testing...");
+			draw_body_15(P + 18, 622, P + CW - 18, "testing...", WARN);
 		else if (sc_now_delay[0] && strcmp(sc_now_delay, "-1") != 0) {
 			snprintf(b, sizeof b, "%s ms", sc_now_delay);
-			draw_text(P + 18, 618, 2, OK, b);
+			draw_body_15(P + 18, 622, P + CW - 18, b, OK);
 		} else
-			draw_text(P + 18, 618, 2, DIM, "-");
+			draw_body_15(P + 18, 622, P + CW - 18, "-", DIM);
 	}
 
 	add_btn(P, 700, (CW - 10) / 2, 56, "自动优选", A_SCTEST);
