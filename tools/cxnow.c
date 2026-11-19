@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include <strings.h>
 
 static int port = 9999;
 
@@ -63,6 +64,16 @@ static char *strval(char *p, const char *key, char *out, int n)
 	return p;
 }
 
+/* Ranking for the selector to start from: 3 = the config's main selector, 0 = mihomo's built-in
+ * GLOBAL (only used when nothing else exists), 1 = a manual-switch selector, 2 = anything else. */
+static int group_rank(const char *n)
+{
+	if (!strcmp(n, "GLOBAL") || !strcmp(n, "COMPATIBLE") || !strcmp(n, "PASS")) return 0;
+	if (strstr(n, "节点选择") || !strcasecmp(n, "proxy") || !strcasecmp(n, "select")) return 3;
+	if (strstr(n, "手动切换")) return 1;
+	return 2;
+}
+
 static int is_group(const char *t)
 {
 	static const char *g[] = { "Selector", "URLTest", "Fallback", "LoadBalance", "Relay",
@@ -81,6 +92,62 @@ static char *find_obj(char *buf, const char *name)
 	return strstr(buf, pat);
 }
 
+/* Subscription configs put the country in front of the node name as a pair of regional-indicator
+ * emoji (U+1F1E6..U+1F1FF), e.g. the Hong Kong flag followed by " 香港-HKBN-2x". The panel has no
+ * emoji glyphs (it drops them), which left the label without the country at all. Rewrite a flag
+ * pair as its two ASCII letters, giving "HK 香港-HKBN-2x"; the 8x16 font has those, and the rest
+ * of the name is copied verbatim. */
+static int utf8_decode(const unsigned char *s, unsigned *cp)
+{
+	unsigned char c = s[0];
+	if (c < 0x80) { *cp = c; return 1; }
+	if ((c & 0xE0) == 0xC0 && (s[1] & 0xC0) == 0x80) {
+		*cp = ((unsigned)(c & 0x1F) << 6) | (s[1] & 0x3F);
+		return 2;
+	}
+	if ((c & 0xF0) == 0xE0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80) {
+		*cp = ((unsigned)(c & 0x0F) << 12) | ((unsigned)(s[1] & 0x3F) << 6) | (s[2] & 0x3F);
+		return 3;
+	}
+	if ((c & 0xF8) == 0xF0 && (s[1] & 0xC0) == 0x80 && (s[2] & 0xC0) == 0x80 && (s[3] & 0xC0) == 0x80) {
+		*cp = ((unsigned)(c & 0x07) << 18) | ((unsigned)(s[1] & 0x3F) << 12) |
+		      ((unsigned)(s[2] & 0x3F) << 6) | (s[3] & 0x3F);
+		return 4;
+	}
+	*cp = c;
+	return 1;
+}
+
+/* A-Z for the 26 regional indicator symbols, 0 for anything else. */
+static int region_letter(unsigned cp)
+{
+	return cp >= 0x1F1E6 && cp <= 0x1F1FF ? 'A' + (int)(cp - 0x1F1E6) : 0;
+}
+
+static void display_name(const char *in, char *out, int n)
+{
+	const unsigned char *p = (const unsigned char *)in;
+	int o = 0;
+	while (*p && o < n - 1) {
+		unsigned cp = 0, ncp = 0;
+		int len = utf8_decode(p, &cp);
+		int nlen = p[len] ? utf8_decode(p + len, &ncp) : 0;
+		int a = region_letter(cp), b = region_letter(ncp);
+		if (a && b) {
+			if (o + 2 > n - 1) break;
+			out[o++] = (char)a;
+			out[o++] = (char)b;
+			p += len + nlen;
+			continue;
+		}
+		if (o + len > n - 1) break;
+		memcpy(out + o, p, len);
+		o += len;
+		p += len;
+	}
+	out[o] = 0;
+}
+
 int main(void)
 {
 	const char *env = getenv("CLASH_PORT");
@@ -90,15 +157,25 @@ int main(void)
 	if (!buf) return 1;
 	if (http("/proxies", buf, 1 << 20) < 0) { free(buf); return 2; }
 
-	/* first Selector group: scan for its type, then look back for the nearest "name":"..." */
+	/* Pick the selector the rules actually point at. mihomo also lists its built-in GLOBAL group
+	 * first, and GLOBAL is a selector too -- walking from it lands on whatever GLOBAL happens to
+	 * hold ("🛑 广告拦截" -> DIRECT), not on the node carrying traffic. Prefer the config's main
+	 * group by name; fall back to the first selector that is not one of the built-ins. */
 	char group[128] = "";
+	int best = -1;
 	char *p = buf;
 	while ((p = strstr(p, "\"type\":\"Selector\""))) {
 		char *start = p - 2000;
 		if (start < buf) start = buf;
 		char *last = NULL, *scan = start;
 		while ((scan = strstr(scan, "\"name\":\"")) && scan < p) { last = scan; scan += 8; }
-		if (last) { strval(last, "name", group, sizeof group); if (group[0]) break; }
+		if (last) {
+			char g[128] = "";
+			strval(last, "name", g, sizeof g);
+			int rank = group_rank(g);
+			if (g[0] && rank > best) { best = rank; snprintf(group, sizeof group, "%s", g); }
+			if (best == 3) break;
+		}
 		p += 16;
 	}
 	if (!group[0]) { free(buf); return 3; }
@@ -129,11 +206,13 @@ int main(void)
 		}
 	}
 
+	char label[160];
+	display_name(cur, label, sizeof label);
 	FILE *f = fopen("/tmp/sc-now", "w");
-	if (f) { fprintf(f, "%s\n", cur); fclose(f); }
+	if (f) { fprintf(f, "%s\n", label); fclose(f); }
 	f = fopen("/tmp/sc-now-delay", "w");
 	if (f) { fprintf(f, "%d\n", delay); fclose(f); }
-	printf("now %s (%d ms)\n", cur, delay);
+	printf("now %s (%d ms)\n", label, delay);
 	free(buf);
 	return 0;
 }
