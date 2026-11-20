@@ -1,9 +1,9 @@
 #!/bin/sh
 # 从 GitHub Release 下载资源，把 OpenWrt 装到一台已 root、已扩区的畅行60 (ZTE 7552N) 上。
 #
-#   ./install-from-release.sh --tag v1.0.0              # 交互确认
-#   ./install-from-release.sh --tag v1.0.0 --yes        # 不确认（危险）
-#   ./install-from-release.sh --tag v1.0.0 --dry-run    # 只检查与构建，不写设备
+#   ./install-from-release.sh --tag v1.1.1              # 交互确认
+#   ./install-from-release.sh --tag v1.1.1 --yes        # 不确认（危险）
+#   ./install-from-release.sh --tag v1.1.1 --dry-run    # 只检查与构建，不写设备
 #   ./install-from-release.sh --local /path/to/assets   # 用本地已下载的资源
 #
 # 前提：目标机 Android 在 slot a、已 root（su=0）、userdata 已缩出 64 GiB 空闲区。

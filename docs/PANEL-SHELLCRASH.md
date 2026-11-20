@@ -22,7 +22,7 @@
 `system("/usr/bin/changxing60-sc-refresh &")`：重新从 API 拉一遍状态（节点数、连接数、上下行），
 不改选择。
 
-## 「当前节点 + 延时」怎么来的（v1.0.8）
+## 「当前节点 + 延时」怎么来的（v1.1.0 起）
 
 新增 `tools/cxnow.c` → `/usr/bin/cxnow`：
 
