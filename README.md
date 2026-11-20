@@ -20,6 +20,8 @@
 
 设备自带的中文状态面板（480×854 内屏，直接读屏，非手机翻拍）：
 
+> 全部页面与弹窗（概览/信号/流量/短信/设置、电源、热点、温度、重启确认）见 [`docs/SCREENSHOTS.md`](docs/SCREENSHOTS.md)。
+
 <table>
 <tr>
 <td><img src="docs/images/panel-overview.png" width="260" alt="概览"></td>
