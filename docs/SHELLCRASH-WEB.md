@@ -1,6 +1,6 @@
-# ShellCrash 网页管理界面
+# ShellCrash 网页端
 
-终端里 `crash` 的菜单，搬到浏览器里：**纯服务端渲染的 HTML，没有 JavaScript**，老手机浏览器也能用。
+只有一个功能：**粘贴订阅地址 → 更新节点**。
 
 ## 地址
 
@@ -8,34 +8,41 @@
 |---|---|
 | WiFi 热点 | `http://192.168.7.1/cgi-bin/shellcrash-ui` |
 | USB | `http://192.168.77.1/cgi-bin/shellcrash-ui` |
-| 短地址（自动跳转） | `http://192.168.7.1/shellcrash.html` |
 
-LuCI 里也有入口：**服务 → ShellCrash**（iframe 打开同一个页面）。
+LuCI 的 **服务 → ShellCrash** 也是这个页面。
 
-## 怎么工作
+## 用法
 
-1. `/usr/bin/cxmenu`：用 `forkpty` 把 `menu.sh` 跑在一个**伪终端**上，行为和 SSH 里完全一致
-   （`/tmp/sc-menu/in` 是按键 FIFO，`/tmp/sc-menu/out` 是输出）；
-2. `/usr/bin/changxing60-sc-web`：JSON 后端（状态、启动/停止/重启、更新订阅、自动优选、自启开关）；
-3. `/www/cgi-bin/shellcrash-ui`：把菜单输出解析成可点的条目，渲染成 HTML；
-4. 每次点条目 = 往 FIFO 写一个按键，菜单状态保持；需要输入时页面显示提问和输入框。
+1. 打开页面，输入框里已经填好当前订阅地址；
+2. 换成新地址（或保持原样）后点「更新节点」；
+3. 按钮变成「正在更新…」，页面每 4 秒自动刷新；
+4. 完成后显示 `上次更新：17:17 成功`（失败为红色）。
 
-菜单条目按**文字**解析，ShellCrash 升级重排编号不会影响页面。
+更新过程约 30–60 秒：下载订阅 → 重建配置 → 重启内核。当前节点和状态在手机内屏
+「设置」页的 ShellCrash 卡片里可以看到。
 
-## 更新订阅
+## 实现
 
-`/usr/bin/changxing60-sc-update` 不写死 `6→7→1`，而是从当前菜单里按文字找：
+- 页面：`/www/cgi-bin/shellcrash-ui`（纯服务端 HTML，无 JavaScript）；
+- 提交后用 `awk` 把地址写进 `/etc/ShellCrash/configs/ShellCrash.cfg` 的 `Url=`；
+- 然后调用 `/usr/bin/changxing60-sc-refresh` → `/usr/bin/changxing60-sc-update`，
+  它在伪终端里驱动 `menu.sh` 的「管理配置文件 → 更新配置文件」，按菜单**文字**定位，不依赖编号；
+- 结果写入 `/tmp/sc-update.status`（`ok HH:MM` / `fail HH:MM`），内屏和网页都读它。
 
-- 「管理配置文件 / 配置文件管理」
-- 「更新配置文件 / 更新订阅」
+## DNS
 
-找不到就退出并报 `label-not-found`，不会误点其他菜单项。更新结束后自动重启服务，
-并把结果写进 `/tmp/sc-update.status`（面板据此显示「07:35 成功」）。
-
-## 自检
+本版把 dnsmasq 上游改成 mihomo（`127.0.0.1#1053`），并把 mihomo 的 fake-ip 范围设为
+`198.18.0.0/15`：
 
 ```sh
-/usr/bin/changxing60-sc-web status
-/usr/bin/changxing60-sc-web menu | head -20
-curl -s 'http://127.0.0.1/cgi-bin/shellcrash-ui' | head -5
+nslookup www.google.com 192.168.7.1   # → 198.18.x.x
+nslookup www.baidu.com  192.168.7.1   # → 真实 IP
+```
+
+这样就消除了对国外域名的 DNS 污染。想恢复成公共 DNS：
+
+```sh
+uci delete dhcp.@dnsmasq[0].server
+uci add_list dhcp.@dnsmasq[0].server='223.5.5.5'
+uci commit dhcp; /etc/init.d/dnsmasq restart
 ```
