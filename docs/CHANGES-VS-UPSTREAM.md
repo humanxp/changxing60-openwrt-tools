@@ -105,7 +105,7 @@ Image**（魔数 `4d5a0091`），不是压缩内核。提取后 `strings` 里的
 
 3. **CPU governor**：全部 `performance`，CPU0 从 768 MHz 拉到 2002 MHz。
 
-效果：用户实测**超过 200 Mbps**。flow offload 是主要贡献（去掉每包 netfilter/NAT），RPS 与 governor
+效果：优化前同一测法约 **200 Mbps**；补全 flowtable 后多次复测 **300+ Mbps**（2026-11-19，iPhone 连 OpenWrt 热点，原始记录 `docs/images/speedtest.png`）。flow offload 是主要贡献（去掉每包 netfilter/NAT），RPS 与 governor
 帮助收包侧和首包处理。
 
 ### 2.3 附带产物
