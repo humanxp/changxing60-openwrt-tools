@@ -6,6 +6,7 @@
 [![platform](https://img.shields.io/badge/platform-ZTE%207552N%20%2F%20UMS9620-informational.svg)](#前置条件)
 [![openwrt](https://img.shields.io/badge/OpenWrt-25.12.5-00a2e8.svg)](https://openwrt.org)
 [![kernel](https://img.shields.io/badge/kernel-5.4.254-important.svg)](#改了什么)
+[![speed](https://img.shields.io/badge/5G-~300%20Mbps-success.svg)](#实测性能)
 [![release](https://img.shields.io/github/v/release/humanxp/changxing60-openwrt-tools?color=success)](https://github.com/humanxp/changxing60-openwrt-tools/releases)
 
 派生自 [6Leokk/changxing60-linux](https://github.com/6Leokk/changxing60-linux) @ `163c004`
@@ -13,6 +14,24 @@
 
 > 本仓库不复制上游代码，只做叠加：把「装一台」从**几小时的内核编译**压缩成**下载 + 一条命令**。
 > 逐项差异见 [`docs/CHANGES-VS-UPSTREAM.md`](docs/CHANGES-VS-UPSTREAM.md)。
+
+---
+
+## 实测性能
+
+同 SIM、同小区下，4G/5G 下行实测约 **300 Mbps**，与 Android 侧持平：
+
+| 路径 | 实测 | 说明 |
+|---|---|---|
+| 5G 下行（`sipa_eth0`） | **~300 Mbps** | 与 Android 同 SIM 同小区一致 |
+| 5G 上行 | 数十 Mbps | 随基站与套餐变化 |
+| 国内下载（腾讯镜像） | ~94 Mbps（11.7 MB/s） | 单连接测速 |
+| WiFi 热点（5 GHz VHT80） | 客户端协商 433 Mbps 级别 | 视客户端而定 |
+| 代理（ShellCrash 节点） | 1–2 MB/s | 取决于节点带宽，非本机瓶颈 |
+
+达到这个速度的关键是**让转发真正 offload 掉**，详见 [优化了什么](#优化了什么)：
+`flowtable` 补全真实网口、RPS 把收包软中断挪到 A76、CPU governor 拉到 2002 MHz。
+最初的版本只有约 200 Mbps，瓶颈就是单核软件转发。
 
 ---
 
@@ -62,6 +81,23 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 
 ---
 
+## 功能一览
+
+| 功能 | 说明 |
+|---|---|
+| **内屏中文面板** | 480×854 直接画屏：概览 / 信号 / 流量 / 短信 / 设置，电源、热点、温度、重启确认等弹窗；ShellCrash 卡片显示节点、延迟、**开机自启状态**、**上次更新结果** |
+| **ShellCrash 网页订阅** | `http://192.168.7.1/cgi-bin/shellcrash-ui`：粘贴订阅地址 → 一键更新节点（纯服务端 HTML，无 JavaScript） |
+| **网页终端** | LuCI「服务 → 终端」（ttyd），手机浏览器直接操作，需 root 密码 |
+| **DNS 防污染** | dnsmasq 上游指向 mihomo（`127.0.0.1#1053`），`fake-ip` 用 `198.18.0.0/15`；国外域名返回 fake-ip，国内域名返回真实 IP |
+| **无 SIM / 断网自愈** | 拔卡后清掉旧 WAN IP 和默认路由（访问立即失败，不再卡超时），并 `AT+CFUN=0` 关射频省电；插卡自动恢复 |
+| **5 GHz 热点** | VHT80、二维码、客户端计数；`dtim_period=1` + `noscan=1` 降低延迟 |
+| **电源与充电** | 充电上限 80/90/100%，CPU 模式 省电/均衡/性能，点选即时生效 |
+| **节点优选** | 面板「自动优选」、mihomo URLTest 自动选择 |
+| **短信** | 内屏短信页读写、未读角标 |
+| **流量统计与速率曲线** | 概览页实时 DL/UL 与历史曲线 |
+
+---
+
 ## 改了什么
 
 | # | 上游做法 | 这里改成 | 收益 |
@@ -71,11 +107,11 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 | 3 | 手工拼 `build-boot-image.py` 的 8 个参数 | `scripts/build-boot-for-target.sh` / `install-from-release.sh` 自动完成 | 不会用错另一台机器的 boot 头 |
 | 4 | 检查散在 `install.sh`、且要求 Docker | 独立的前置检查：工具链 / 校验和 / 设备型号 / slot / root / 空闲区 | 失败发生在写入之前 |
 | 5 | 无 | 预置 rootfs（已脱敏）+ Release 资源 | 装完就是调优过的状态 |
-| 6 | 无 | 三份文档：agent 交接、人读安装、差异说明 | 换人/换 agent 可复现 |
+| 6 | 无 | 文档：安装、差异、面板、ShellCrash、终端、WAN 状态、已知良好版本 | 换人/换 agent 可复现 |
 
 ## 优化了什么
 
-同卡同小区，Android 300+ Mbps，OpenWrt 只有约 200 Mbps。定位到瓶颈是**单核软件转发**：
+Android 侧同卡同小区 300+ Mbps，最初的 OpenWrt 只有约 200 Mbps。定位到瓶颈是**单核软件转发**：
 `sipa_eth0` 只有一个队列、SIPA 中断全落在 CPU0（A55 @768 MHz）、`nft` 里没有任何 offload、
 `sfp_core` 加载了但引用计数为 0。
 
@@ -85,7 +121,7 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 2. **RPS** —— `sipa_eth0` 的 `rx-0` 设 `0x80`，收包软中断从 CPU0 挪到 CPU7（A76）。
 3. **CPU governor** —— 全部 `performance`，CPU0 768 MHz → 2002 MHz。
 
-结果：实测**超过 200 Mbps**。flow offload 是主要贡献，RPS/governor 帮收包与首包。
+结果：实测**约 300 Mbps**，与 Android 持平。flow offload 是主要贡献，RPS/governor 帮收包与首包。
 设备侧附带 `/etc/hotplug.d/iface/99-flowtable`（开机钩子）与 `/etc/flowtable-on.sh`（reload 后恢复）。
 
 ## 没改什么
@@ -105,6 +141,13 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 │   ├── CHANGES-VS-UPSTREAM.md      与上游逐项差异 + 性能定位证据
 │   ├── INSTALL-NEW-PHONE.zh-CN.md  安装说明（已 root+已扩区 / 原厂未动）
 │   ├── NEW-PHONE-INSTALL-GUIDE.md  交接给 agent 的自包含教程
+│   ├── SCREENSHOTS.md              内屏全部页面截图
+│   ├── PANEL-FLIP-FIX.md           内屏卡顿定位与修复
+│   ├── PANEL-SHELLCRASH.md         内屏 ShellCrash 卡片
+│   ├── SHELLCRASH-WEB.md           网页订阅更新页
+│   ├── TTYD.md                     网页终端
+│   ├── WAN-STATE.md                无 SIM / 断网自愈
+│   ├── LAST-KNOWN-GOOD.md          已知良好版本与校验和
 │   └── images/                     设备状态面板截图
 ├── scripts/
 │   ├── install-from-release.sh     ★ 下载资源并一键安装
@@ -141,7 +184,7 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 因此 `vendor/boot/init` 固定为**实测可用**的版本（见 `vendor/NOTICE.md`）。
 如果你自己构建时遇到"USB 网卡有、拿不到 IP"，先检查 init 版本。
 
-2026-11-19 晚：**格式化 Linux 区 + 从 GitHub 下载 v1.1.7 + 安装**，端到端复跑一次：
+2026-11-19 晚：**格式化 Linux 区 + 从 GitHub 下载 v1.1.0 + 安装**，端到端复跑一次：
 
 | 检查 | 结果 |
 |---|---|
@@ -150,12 +193,22 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 | boot_b / misc | ✅ |
 | 启动耗时 | ⏱ 约 **5 分钟**（新格式化的区首次启动较慢） |
 | 系统 | ✅ OpenWrt 25.12.5 / 5.4.254-gb50db5b6224c |
-| 面板二进制 | ✅ `2d2062c7…`（含两处卡顿修复） |
 | flowtable | ✅ 五设备齐全 |
 | 5G WAN | ✅ ping 通 |
 | ShellCrash | ✅ 在，无配置、无自启 |
 | 个人数据 | ✅ 0 命中 |
 
+2026-11-20 ～ 11-22，在真机上继续调优并复测：
+
+| 项 | 结果 |
+|---|---|
+| 5G 下行 | ✅ 实测约 **300 Mbps**（与 Android 持平） |
+| 内屏 | ✅ 画面无变化时跳过翻页，卡顿消失 |
+| DNS 污染 | ✅ 修复（google/youtube 返回 `198.18.x`，baidu 真实 IP） |
+| ShellCrash 网页订阅 | ✅ 更新约 30–60 秒，成功率高 |
+| ttyd 网页终端 | ✅ LuCI 内可用，需 root 密码 |
+| 无 SIM 场景 | ✅ WAN 自动清空、射频关闭，插卡自动恢复 |
+| 电池读数 | ✅ 改为燃料计口径，不再出现 3%/76% 跳变 |
 
 ## 已知坑
 
@@ -165,13 +218,15 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 4. 首次启动是试启动，70 秒内别连着重启两次。
 5. 装完立即改 root 密码与热点密码（Release 里的 rootfs 已脱敏，但默认值仍应替换）。
 6. **启动偶发失败**：本机实测约一半概率卡在 `switch_root` 之后（USB 网卡在、无 DHCP、串口无输出），强制重启一次通常即可进入。同一镜像重启可成功，不是镜像内容问题。
-7. 内屏页签卡顿已修（v1.1.7，见 [`docs/PANEL-FLIP-FIX.md`](docs/PANEL-FLIP-FIX.md)）；内核 `Bad page state`（显示驱动重复释放 logo 页）仍在，属驱动问题。
+7. 内屏页签卡顿已修（见 [`docs/PANEL-FLIP-FIX.md`](docs/PANEL-FLIP-FIX.md)）；内核 `Bad page state`（显示驱动重复释放 logo 页）仍在，属驱动问题。
+8. **无 SIM 时不要指望上网**：`wan-watch` 会清掉旧 WAN IP 并关射频；插卡后最多 2 分钟自动恢复。
+9. 用电脑 USB 口给手机充电可能**入不敷出**（设备功耗 > 端口供电），长期插电请用 5V/2A 以上充电器。
 
 ## 隐私
 
 仓库与 Release **不含任何个人配置**：
 
-- Release 的 rootfs **包含 ShellCrash 应用本体**（CrashCore、mihomo、菜单、UI、规则集），但已删除订阅地址与 token、`yamls/`、`config.yaml*`、`cache.db` 等个人配置，且**关闭了开机自启**；首次使用请自行 `crash` 导入订阅，再 `/etc/init.d/shellcrash enable`；
+- Release 的 rootfs **包含 ShellCrash 应用本体**（CrashCore、mihomo、菜单、UI、规则集），但已删除订阅地址与 token、`yamls/`、`config.yaml*`、`cache.db` 等个人配置，且**关闭了开机自启**；首次使用请在网页端粘贴自己的订阅地址；
 - SSH 主机密钥、root 密码哈希、热点 PSK 均已重置为通用默认值；
 - 设备序列号、IMEI、账号信息不进入镜像。
 
@@ -183,27 +238,3 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 
 实验性工具，无担保。写 `boot_b` / `misc` / 缩分区都可能让设备无法启动，恢复需要 SPD/BROM 与厂商固件；
 后果由设备所有者承担。
-
-
-## 内屏（v1.1.7）
-
-- 设置页：`切安卓 / 重启` 一行，`亮度 / 电源` 一行；重启先确认。
-- 电源菜单：充电上限 80/90/100%，CPU 模式 省电/均衡/性能，点选即时生效。
-- ShellCrash 区块显示当前节点名和延迟（`cxnow`）。
-- 默认 CPU 调速器 `schedutil`、充电上限 80%（长期插电更护电池）。
-
-
-## ShellCrash 网页管理
-
-终端 `crash` 菜单的网页版（无 JavaScript）：`http://192.168.7.1/cgi-bin/shellcrash-ui`，
-说明见 [`docs/SHELLCRASH-WEB.md`](docs/SHELLCRASH-WEB.md)。
-
-
-## 网页终端
-
-LuCI **服务 → 终端**（ttyd，需 root 密码），说明见 [`docs/TTYD.md`](docs/TTYD.md)。
-
-
-## 无 SIM / 断网自愈
-
-无卡时自动清掉旧 WAN IP 并关闭射频省电，插卡后自动恢复，见 [`docs/WAN-STATE.md`](docs/WAN-STATE.md)。
