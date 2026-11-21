@@ -71,10 +71,10 @@ CPU governor 拉到 2002 MHz。
 ```sh
 git clone https://github.com/humanxp/changxing60-openwrt-tools.git
 cd changxing60-openwrt-tools
-scripts/install-from-release.sh --tag v1.1.7
+scripts/install-from-release.sh --tag v1.1.8
 ```
 
-脚本会做完整流程：下载并校验 [Release v1.1.7](https://github.com/humanxp/changxing60-openwrt-tools/releases/tag/v1.1.7)
+脚本会做完整流程：下载并校验 [Release v1.1.8](https://github.com/humanxp/changxing60-openwrt-tools/releases/tag/v1.1.8)
 资源 → 检查设备（型号 / slot / root / 空闲区）→ **用目标机自己的 `boot_a` 生成 boot 镜像** →
 解包 rootfs → 写 `boot_b` → 写 `misc` → 重启。
 
@@ -105,7 +105,7 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 | **5 GHz 热点** | VHT80、二维码、客户端计数；`dtim_period=1` + `noscan=1` 降低延迟 |
 | **电源与充电** | 充电上限 80/90/100%，CPU 模式 省电/均衡/性能，点选即时生效 |
 | **节点优选** | 面板「自动优选」、mihomo URLTest 自动选择 |
-| **短信** | 内屏短信页读写、未读角标 |
+| **短信** | 内屏短信页读取、未读角标，**上一条/下一条** 翻页（预取正文，切换无延迟） |
 | **流量统计与速率曲线** | 概览页实时 DL/UL 与历史曲线 |
 
 ---
@@ -242,7 +242,7 @@ Android 侧同卡同小区 300+ Mbps，最初的 OpenWrt 只有约 200 Mbps。�
 - SSH 主机密钥、root 密码哈希、热点 PSK 均已重置为通用默认值；
 - 设备序列号、IMEI、账号信息不进入镜像。
 
-> v1.0.0 曾误带一份 ShellCrash 配置，已删除该 Release 并由 v1.1.7 取代。
+> v1.0.0 曾误带一份 ShellCrash 配置，已删除该 Release 并由 v1.1.8 取代。
 
 ## 许可与免责
 
