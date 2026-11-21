@@ -3,11 +3,11 @@
 仓库现在**只保留一个 Release**，所以这份文件记录"当前这版到底验证过什么"。
 回退时如果没法从 GitHub 拿到旧包，以这里的校验和与检查项为准。
 
-## v1.1.5 — 2026-11-20
+## v1.1.6 — 2026-11-20
 
 | 资源 | SHA256 |
 |---|---|
-| `rootfs.tar.gz` | `3eaf6bc753d7fc99d22695ef1f12b7e781cac79f065e996ba698bbab8ee67d62` |
+| `rootfs.tar.gz` | `c1f6616f32a9b66096cbe7df7959d45747b41ad4b6e3a876a04411710913aeab` |
 | `Image` | `03d50fec4b088555ac86c80f80d79aaccefb6587affd8d88ac6e76a748941bc5` |
 | `modules.tar.gz` | `f68dfd1319339a95f448ff1d75030d13b7c060f9cb09c328fca899fd7ffa7103` |
 | `helpers.tar.gz` | `05a29ca0d5b4c5b603d0220cb7a791490337c75a9df2e0c8b4a66b773d6fead8` |
@@ -21,7 +21,7 @@
 - CPU 调速器 `schedutil`、充电上限 80%（`charge-cap=800`）、flow offload、`usb0` hotplug 修复；
 - 镜像内无订阅配置、无 SSH 公钥、无诊断日志。
 
-### 已知问题（v1.1.5 仍在）
+### 已知问题（v1.1.6 仍在）
 
 - 启动偶尔卡在 `switch_root` 之后（约一半概率），强制重启一次通常可进；
 - 内核每次启动打印 `BUG: Bad page state`（显示驱动重复释放 logo 页）与 `unknown esd check mode:4`，属驱动问题；
