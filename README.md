@@ -40,10 +40,10 @@
 ```sh
 git clone https://github.com/humanxp/changxing60-openwrt-tools.git
 cd changxing60-openwrt-tools
-scripts/install-from-release.sh --tag v1.1.4
+scripts/install-from-release.sh --tag v1.1.5
 ```
 
-脚本会做完整流程：下载并校验 [Release v1.1.4](https://github.com/humanxp/changxing60-openwrt-tools/releases/tag/v1.1.4)
+脚本会做完整流程：下载并校验 [Release v1.1.5](https://github.com/humanxp/changxing60-openwrt-tools/releases/tag/v1.1.5)
 资源 → 检查设备（型号 / slot / root / 空闲区）→ **用目标机自己的 `boot_a` 生成 boot 镜像** →
 解包 rootfs → 写 `boot_b` → 写 `misc` → 重启。
 
@@ -141,7 +141,7 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 因此 `vendor/boot/init` 固定为**实测可用**的版本（见 `vendor/NOTICE.md`）。
 如果你自己构建时遇到"USB 网卡有、拿不到 IP"，先检查 init 版本。
 
-2026-11-19 晚：**格式化 Linux 区 + 从 GitHub 下载 v1.1.4 + 安装**，端到端复跑一次：
+2026-11-19 晚：**格式化 Linux 区 + 从 GitHub 下载 v1.1.5 + 安装**，端到端复跑一次：
 
 | 检查 | 结果 |
 |---|---|
@@ -165,7 +165,7 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 4. 首次启动是试启动，70 秒内别连着重启两次。
 5. 装完立即改 root 密码与热点密码（Release 里的 rootfs 已脱敏，但默认值仍应替换）。
 6. **启动偶发失败**：本机实测约一半概率卡在 `switch_root` 之后（USB 网卡在、无 DHCP、串口无输出），强制重启一次通常即可进入。同一镜像重启可成功，不是镜像内容问题。
-7. 内屏页签卡顿已修（v1.1.4，见 [`docs/PANEL-FLIP-FIX.md`](docs/PANEL-FLIP-FIX.md)）；内核 `Bad page state`（显示驱动重复释放 logo 页）仍在，属驱动问题。
+7. 内屏页签卡顿已修（v1.1.5，见 [`docs/PANEL-FLIP-FIX.md`](docs/PANEL-FLIP-FIX.md)）；内核 `Bad page state`（显示驱动重复释放 logo 页）仍在，属驱动问题。
 
 ## 隐私
 
@@ -175,7 +175,7 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 - SSH 主机密钥、root 密码哈希、热点 PSK 均已重置为通用默认值；
 - 设备序列号、IMEI、账号信息不进入镜像。
 
-> v1.0.0 曾误带一份 ShellCrash 配置，已删除该 Release 并由 v1.1.4 取代。
+> v1.0.0 曾误带一份 ShellCrash 配置，已删除该 Release 并由 v1.1.5 取代。
 
 ## 许可与免责
 
@@ -185,7 +185,7 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 后果由设备所有者承担。
 
 
-## 内屏（v1.1.4）
+## 内屏（v1.1.5）
 
 - 设置页：`切安卓 / 重启` 一行，`亮度 / 电源` 一行；重启先确认。
 - 电源菜单：充电上限 80/90/100%，CPU 模式 省电/均衡/性能，点选即时生效。
@@ -197,3 +197,8 @@ ssh root@192.168.77.1 'ubus call system board | head -4; uname -r'
 
 终端 `crash` 菜单的网页版（无 JavaScript）：`http://192.168.7.1/cgi-bin/shellcrash-ui`，
 说明见 [`docs/SHELLCRASH-WEB.md`](docs/SHELLCRASH-WEB.md)。
+
+
+## 网页终端
+
+LuCI **服务 → 终端**（ttyd，需 root 密码），说明见 [`docs/TTYD.md`](docs/TTYD.md)。
